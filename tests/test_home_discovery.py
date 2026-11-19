@@ -154,6 +154,58 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn('secret-token', json.dumps(self.service.snapshot()))
         self.assertTrue(self.service.snapshot()['error'])
 
+    def test_account_endpoint_normalization_and_rejection(self):
+        for host in ('apigw.tuyaus.com', 'apigw.tuyaeu.com', 'openapi.tuyacn.com',
+                     'apigw.tuyain.com', 'apigw-us.iotbing.com'):
+            for suffix in ('', '/', ':443/'):
+                with self.subTest(host=host, suffix=suffix):
+                    self.assertEqual(tuya_account.normalize_endpoint('https://'+host+suffix), 'https://'+host)
+        self.assertEqual(tuya_account.normalize_endpoint('HTTPS://APIGW.TUYAUS.COM/'), 'https://apigw.tuyaus.com')
+        for value in (None, 123, '', 'http://apigw.tuyaus.com', 'https://192.168.88.194',
+                      'https://apigw.tuyaus.com.attacker.com', 'https://not-tuyaus.com',
+                      'https://attacker.com/tuyaus.com', 'https://tuyaus.com@attacker.com',
+                      'https://secret@apigw.tuyaus.com', 'https://apigw.tuyaus.com:8443',
+                      'https://apigw.tuyaus.com:bad', 'https://apigw.tuyaus.com/path',
+                      'https://apigw.tuyaus.com/?token=secret', 'https://apigw.tuyaus.com/#fragment',
+                      'https://apigw.tuyaus.com/\\path', 'https://[invalid', 'https://apigw.tuyaus.com/\n'):
+            with self.subTest(endpoint=value), self.assertRaises(tuya_account.AccountError) as error:
+                tuya_account.normalize_endpoint(value)
+            self.assertNotIn('secret', str(error.exception))
+
+    def test_unapproved_signin_still_requires_phone_approval(self):
+        login = Mock()
+        login.login_result.return_value = (False, {})
+        with patch('app.home.tuya_account.sdk', return_value=(Mock(return_value=login), Mock())), \
+             self.assertRaises(tuya_account.AccountError):
+            tuya_account.confirm_signin({'qrcode':'pending', 'user_code':'user-code'})
+        login.session.close.assert_called_once()
+
+    def test_regional_signin_reaches_device_import(self):
+        info = dict(endpoint='https://apigw.tuyaus.com/', terminal_id='terminal',
+                    t=123, uid='uid', expire_time=3600, access_token='private-access',
+                    refresh_token='private-refresh')
+        login = Mock()
+        login.login_result.return_value = (True, info)
+        self.service.pending = {'qrcode':'pending-code', 'user_code':'user-code'}
+        self.service.lan = lan()
+        with patch('app.home.tuya_account.sdk', return_value=(Mock(return_value=login), Mock())), \
+             patch('app.home.tuya_account.fetch_devices', return_value=(devices(), [])):
+            self.service.confirm()
+            for _ in range(200):
+                if not self.service.snapshot()['busy']: break
+                time.sleep(.005)
+        status = self.service.snapshot()
+        self.assertIsNone(status['error'])
+        self.assertEqual(status['phase'], 'ready')
+        self.assertEqual(self.service.account['endpoint'], 'https://apigw.tuyaus.com')
+        self.assertNotIn('private-access', json.dumps(status))
+        self.assertNotIn('private-refresh', json.dumps(status))
+        doc, count, disabled = self.service.import_devices(dict(batch=status['batch'], revision=0,
+            items=[{'id':'sensor'}, {'id':'plug'}]))
+        self.assertEqual((count, disabled), (3, 0))
+        self.assertEqual(len(doc['devices']), 2)
+        login.session.close.assert_called_once()
+
     def test_qr_expiry_and_retry(self):
         with patch('app.home.tuya_account.begin_signin', return_value=({'qrcode':'secret'},'data:image/svg+xml;base64,AA==')):
             self.service.signin('user-code',False)
