@@ -162,6 +162,7 @@ class RuleEngineTests(unittest.TestCase):
     def setUp(self):
         self.engine = RuleEngine()
         self.doc = fixture()
+        self.doc['rules'][0]['run_mode'] = 'crossing'
         self.action = Mock()
         self.log = Mock()
         self.now = 1795100000

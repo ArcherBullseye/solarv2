@@ -151,7 +151,7 @@ class DashboardAutomationTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate(ranged,doc)
         self.assertEqual(validate(fixture(),doc)['rules'],fixture()['rules'])
 
-    def test_soc_and_excess_crossings_queue_on_and_off_without_startup_actions(self):
+    def test_soc_and_excess_maintain_confirmed_power(self):
         doc=fixture();doc['rules']=[solar_rule(True),solar_rule(False)]
         service=HomeService(AppState());service.document=save_document(doc)
         service.command=Mock()
@@ -159,7 +159,8 @@ class DashboardAutomationTests(unittest.TestCase):
         for elapsed,soc,grid in [(0,80,0),(1,100,2000),(2,100,2000),(3,89,-100)]:
             data=snapshot(NOW+elapsed);data['readings'].update(soc=soc,grid_power_w=grid)
             sources=dashboard_readings(data,self.settings)
-            engine.tick(service.document,{},sources['solar'],'America/Detroit',service.action,Mock(),NOW+elapsed,dashboard=sources)
+            target = {'device-2': dict(status='connected', power=elapsed >= 2, updated_at={'power':stamp(NOW+elapsed)})}
+            engine.tick(service.document,target,sources['solar'],'America/Detroit',service.action,Mock(),NOW+elapsed,dashboard=sources)
         self.assertEqual(service.command.call_args_list,[call('device-2',True,'Solar plug ON',automatic=True),
             call('device-2',False,'Solar plug OFF',automatic=True)])
 
