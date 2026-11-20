@@ -235,6 +235,7 @@ class RecoveryApiTests(unittest.TestCase):
         doc['rules'][0]['actions'] = [doc['rules'][0]['actions'][0]]
         self.service.document = save_document(doc)
         self.service.report('device-0',{'temperature_f':46.4})
+        self.service.child_availability('device-2', True)
         self.service.report('device-2',{'power':False})
         worker = ConnectionWorker(self.service,doc['hubs'][0],doc['devices'],self.service.document['revision'])
         child = Mock()

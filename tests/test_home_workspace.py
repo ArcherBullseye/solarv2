@@ -134,6 +134,7 @@ class WorkspaceTests(unittest.TestCase):
         doc = save_document(fixture())
         service.document = doc
         service.readings = {d['id']: {'updated_at':{}} for d in doc['devices']}
+        service.child_availability('device-2', True)
         worker = ConnectionWorker(service, doc['hubs'][0], doc['devices'], doc['revision'])
         child = Mock()
         child.set_value.return_value = {'dps': {'1':True}}
